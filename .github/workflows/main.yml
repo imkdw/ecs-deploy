@@ -1,0 +1,59 @@
+name: 메타포켓 민팅 서버 배포
+
+# on:
+#   pull_request:
+#     branches:
+#       - main
+#     types: closed
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Docker Build
+        run: |
+          # 도커 이미지 빌드
+          docker build -t mint -f ./Dockerfile .
+
+      - name: ECR Push Docker Image
+        env:
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          ECR_REPOSITORY: ${{ secrets.AWS_ECR_NAME }}
+          ECR_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          # ECR 로그인
+          aws ecr get-login-password --region $ECR_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+
+          # 도커 태그 설정
+          docker tag mint:latest $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          # 도커 이미지 ECR에 푸시
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          # ECR에서 latest로 태그되지 않은 이미지 삭제
+          aws ecr list-images --repository-name $ECR_REPOSITORY --filter tagStatus=UNTAGGED --query 'imageIds[*]' --output json | jq -r '.[] | {imageDigest: .imageDigest} | [.imageDigest] | @tsv' | xargs -I {} aws ecr batch-delete-image --repository-name $ECR_REPOSITORY --image-ids imageDigest={}
+
+      # - name: 빌드 결과 슬랙에 푸쉬
+      #   uses: 8398a7/action-slack@v3
+      #   with:
+      #     author_name: 'Mint Server Deploy'
+      #     status: ${{ job.status }}
+      #     fields: repo,message,author,took
+      #     text: ${{ steps.set_text.outputs.text }}
+      #   env:
+      #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }} # required

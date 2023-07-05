@@ -1,4 +1,4 @@
-name: 메타포켓 민팅 서버 배포
+name: ECS 배포용 업로드
 
 # on:
 #   pull_request:
